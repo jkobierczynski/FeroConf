@@ -18,7 +18,7 @@
 //! as a whole, it is not merged field by field.
 
 use std::collections::HashSet;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
 use serde::Deserialize;
@@ -30,6 +30,8 @@ use crate::secret::Secret;
 pub struct Inventory {
     #[serde(default)]
     pub defaults: Defaults,
+    #[serde(default)]
+    pub backup: BackupSettings,
     #[serde(default, rename = "device")]
     pub devices: Vec<Device>,
 }
@@ -39,6 +41,34 @@ pub struct Inventory {
 pub struct Defaults {
     pub tftp_server: Option<IpAddr>,
     pub snmp: Option<SnmpCredentials>,
+}
+
+/// The `[backup]` section: how FeroConf runs SNMP+TFTP backups.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct BackupSettings {
+    /// Where the built-in TFTP server listens. Routers always upload to port 69.
+    pub tftp_listen: SocketAddr,
+    /// How long one device's backup may take, from the first SNMP request to the stored file.
+    pub timeout_secs: u64,
+    /// Time to wait for each SNMP response.
+    pub snmp_timeout_ms: u64,
+    /// SNMP retries after the first attempt.
+    pub snmp_retries: u32,
+    /// How many devices are backed up at the same time.
+    pub concurrency: usize,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            tftp_listen: SocketAddr::from(([0, 0, 0, 0], 69)),
+            timeout_secs: 120,
+            snmp_timeout_ms: 2000,
+            snmp_retries: 2,
+            concurrency: 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +82,8 @@ pub struct Device {
     pub vendor: Vendor,
     pub tftp_server: Option<IpAddr>,
     pub snmp: Option<SnmpCredentials>,
+    /// SNMP agent port, 161 when not set.
+    pub snmp_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
@@ -176,6 +208,16 @@ impl Inventory {
                     priv_password,
                 )?;
             }
+        }
+        if self.backup.concurrency == 0 {
+            return Err(InventoryError::Invalid(
+                "backup.concurrency must be at least 1".into(),
+            ));
+        }
+        if self.backup.timeout_secs == 0 || self.backup.snmp_timeout_ms == 0 {
+            return Err(InventoryError::Invalid(
+                "backup timeouts must be greater than 0".into(),
+            ));
         }
         if let Some(SnmpCredentials::V3 {
             auth_protocol,
@@ -331,6 +373,22 @@ mod tests {
         assert_eq!(r2.tftp_server, Some("198.51.100.5".parse().unwrap()));
         assert!(matches!(r2.snmp, Some(SnmpCredentials::V3 { .. })));
         assert!(inv.warnings().is_empty(), "{:?}", inv.warnings());
+    }
+
+    #[test]
+    fn backup_section_defaults_and_overrides() {
+        let inv = Inventory::parse("").unwrap();
+        assert_eq!(inv.backup.tftp_listen, "0.0.0.0:69".parse().unwrap());
+        assert_eq!(inv.backup.concurrency, 8);
+
+        let inv =
+            Inventory::parse("[backup]\ntftp_listen = \"127.0.0.1:6969\"\ntimeout_secs = 30\n")
+                .unwrap();
+        assert_eq!(inv.backup.tftp_listen, "127.0.0.1:6969".parse().unwrap());
+        assert_eq!(inv.backup.timeout_secs, 30);
+        assert_eq!(inv.backup.snmp_retries, 2);
+
+        assert!(Inventory::parse("[backup]\nconcurrency = 0\n").is_err());
     }
 
     #[test]
