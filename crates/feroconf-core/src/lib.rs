@@ -14,5 +14,5 @@ pub mod normalize;
 pub mod secret;
 pub mod store;
 
-pub use inventory::{BackupSettings, Device, Inventory, SnmpCredentials, Vendor};
+pub use inventory::{BackupSettings, Device, Inventory, SnmpCredentials, Vendor, WatchSettings};
 pub use store::{ConfigStore, Snapshot};

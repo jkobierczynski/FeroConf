@@ -18,6 +18,13 @@ snmp_timeout_ms = 2000
 snmp_retries = 2
 concurrency = 8         # devices backed up at the same time
 
+[watch]
+# `feroconf watch` listens here for SNMP traps (v1/v2c). Port 162 needs the same privilege as 69.
+trap_listen = "0.0.0.0:162"
+trap_community = { env = "FEROCONF_TRAP_COMMUNITY" }   # traps with another community are ignored
+debounce_secs = 15      # wait for a burst of changes to finish before backing up
+# interval_mins = 1440  # also back up every device once a day
+
 [[device]]
 name = "core-rtr1"
 host = "192.0.2.1"

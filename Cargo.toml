@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/jkobierczynski/FeroConf"
-rust-version = "1.80"
+rust-version = "1.82"
 
 [workspace.dependencies]
 anyhow = "1"

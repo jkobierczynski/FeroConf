@@ -4,8 +4,10 @@
 //! SNMP SETs ([`cisco`]) to make each device upload its running-config to it.
 
 pub mod cisco;
+pub mod schedule;
 pub mod snmp;
 pub mod tftp;
+pub mod traps;
 
 use std::io;
 use std::net::IpAddr;

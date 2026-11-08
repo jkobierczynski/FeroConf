@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use feroconf_core::{diff, ConfigStore, Inventory, Vendor};
 
 mod backup;
+mod watch;
 
 /// FeroConf: back up, version and diff network device configs.
 #[derive(Parser)]
@@ -78,6 +79,9 @@ enum Command {
         /// Devices to back up. All devices in the inventory when none are given.
         devices: Vec<String>,
     },
+    /// Run until stopped: back up every device at start, then again whenever it sends a
+    /// config-change SNMP trap, and on `watch.interval_mins` if set.
+    Watch,
 }
 
 fn main() -> ExitCode {
@@ -200,6 +204,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+        Command::Watch => {
+            let inv = Inventory::load(&cli.inventory)?;
+            let store = ConfigStore::open_or_init(&cli.store)?;
+            tokio::runtime::Runtime::new()?.block_on(watch::run(&inv, &store))?;
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Backup { devices } => {
             let inv = Inventory::load(&cli.inventory)?;
             let store = ConfigStore::open_or_init(&cli.store)?;
@@ -233,7 +243,7 @@ fn vendor_name(v: Vendor) -> &'static str {
 }
 
 /// UTC time as `YYYY-MM-DD HH:MM`, without pulling in a date crate.
-fn format_time(secs: i64) -> String {
+pub(crate) fn format_time(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
     // Civil-from-days, Howard Hinnant's algorithm.

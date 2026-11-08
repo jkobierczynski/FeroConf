@@ -32,6 +32,8 @@ pub struct Inventory {
     pub defaults: Defaults,
     #[serde(default)]
     pub backup: BackupSettings,
+    #[serde(default)]
+    pub watch: WatchSettings,
     #[serde(default, rename = "device")]
     pub devices: Vec<Device>,
 }
@@ -67,6 +69,32 @@ impl Default for BackupSettings {
             snmp_timeout_ms: 2000,
             snmp_retries: 2,
             concurrency: 8,
+        }
+    }
+}
+
+/// The `[watch]` section: how `feroconf watch` listens for traps and schedules backups.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct WatchSettings {
+    /// Where to listen for SNMP traps.
+    pub trap_listen: SocketAddr,
+    /// When set, v1/v2c traps with another community are ignored.
+    pub trap_community: Option<Secret>,
+    /// Wait this long after a config-change trap before backing up, so a burst of changes
+    /// becomes one backup.
+    pub debounce_secs: u64,
+    /// Also back up every device on this interval, in minutes. Off when not set.
+    pub interval_mins: Option<u64>,
+}
+
+impl Default for WatchSettings {
+    fn default() -> Self {
+        Self {
+            trap_listen: SocketAddr::from(([0, 0, 0, 0], 162)),
+            trap_community: None,
+            debounce_secs: 15,
+            interval_mins: None,
         }
     }
 }
@@ -212,6 +240,11 @@ impl Inventory {
         if self.backup.concurrency == 0 {
             return Err(InventoryError::Invalid(
                 "backup.concurrency must be at least 1".into(),
+            ));
+        }
+        if self.watch.interval_mins == Some(0) {
+            return Err(InventoryError::Invalid(
+                "watch.interval_mins must be at least 1".into(),
             ));
         }
         if self.backup.timeout_secs == 0 || self.backup.snmp_timeout_ms == 0 {
@@ -389,6 +422,25 @@ mod tests {
         assert_eq!(inv.backup.snmp_retries, 2);
 
         assert!(Inventory::parse("[backup]\nconcurrency = 0\n").is_err());
+    }
+
+    #[test]
+    fn watch_section_defaults_and_overrides() {
+        let inv = Inventory::parse("").unwrap();
+        assert_eq!(inv.watch.trap_listen, "0.0.0.0:162".parse().unwrap());
+        assert_eq!(inv.watch.debounce_secs, 15);
+        assert!(inv.watch.interval_mins.is_none());
+        assert!(inv.watch.trap_community.is_none());
+
+        let inv = Inventory::parse(
+            "[watch]\ntrap_listen = \"127.0.0.1:1162\"\ntrap_community = { env = \"TRAPS\" }\ninterval_mins = 1440\n",
+        )
+        .unwrap();
+        assert_eq!(inv.watch.trap_listen.port(), 1162);
+        assert_eq!(inv.watch.interval_mins, Some(1440));
+        assert!(inv.watch.trap_community.is_some());
+
+        assert!(Inventory::parse("[watch]\ninterval_mins = 0\n").is_err());
     }
 
     #[test]
