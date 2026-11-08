@@ -5,6 +5,8 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use feroconf_core::{diff, ConfigStore, Inventory, Vendor};
 
+mod backup;
+
 /// FeroConf: back up, version and diff network device configs.
 #[derive(Parser)]
 #[command(version, about)]
@@ -68,6 +70,14 @@ enum Command {
     },
     /// List the devices that have stored configs.
     Devices,
+    /// Fetch configs from devices over SNMP+TFTP and store the ones that changed.
+    ///
+    /// Runs FeroConf's own TFTP server on `backup.tftp_listen` (port 69 by default, which needs
+    /// root or CAP_NET_BIND_SERVICE) while the backups run.
+    Backup {
+        /// Devices to back up. All devices in the inventory when none are given.
+        devices: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -189,6 +199,17 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 println!("{d}");
             }
             Ok(ExitCode::SUCCESS)
+        }
+        Command::Backup { devices } => {
+            let inv = Inventory::load(&cli.inventory)?;
+            let store = ConfigStore::open_or_init(&cli.store)?;
+            let failed =
+                tokio::runtime::Runtime::new()?.block_on(backup::run(&inv, &store, &devices))?;
+            Ok(if failed == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
         }
     }
 }

@@ -26,3 +26,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  fake-router:
+    name: end-to-end (fake Cisco router)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y snmpd snmp curl
+      - run: sudo systemctl stop snmpd || true
+      - run: cargo build
+      - run: scripts/fake-cisco/run.sh
