@@ -1,0 +1,17 @@
+[package]
+name = "feroconf-cli"
+description = "Command-line interface for FeroConf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "feroconf"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+feroconf-core = { path = "../feroconf-core" }

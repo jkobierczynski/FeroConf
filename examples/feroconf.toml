@@ -1,0 +1,29 @@
+# Example FeroConf inventory. Copy it to feroconf.toml and adjust.
+
+[defaults]
+# Address the routers use to reach FeroConf's built-in TFTP server.
+tftp_server = "192.0.2.10"
+
+[defaults.snmp]
+version = "v2c"
+# Keep secrets out of this file: read them from the environment or a file.
+write_community = { env = "FEROCONF_RW_COMMUNITY" }
+
+[[device]]
+name = "core-rtr1"
+host = "192.0.2.1"
+vendor = "cisco-ios"        # cisco-ios (default), cisco-ios-xe or cisco-nxos
+
+[[device]]
+name = "edge-rtr2"
+host = "192.0.2.2"
+vendor = "cisco-ios-xe"
+
+# A device-level [device.snmp] table replaces [defaults.snmp] for that device.
+[device.snmp]
+version = "v3"
+user = "feroconf"
+auth_protocol = "sha256"    # md5, sha, sha224, sha256, sha384, sha512
+auth_password = { file = "/etc/feroconf/snmp-auth" }
+priv_protocol = "aes128"    # des, aes128, aes192, aes256
+priv_password = { file = "/etc/feroconf/snmp-priv" }
