@@ -3,7 +3,8 @@
 FeroConf backs up, versions and diffs router, switch and firewall configs. Every config change
 becomes a commit in a plain Git repository, so the history works with any Git tool too.
 
-**Status:** early development. Cisco backups over SNMP+TFTP work; SNMP trap monitoring is next.
+**Status:** early development. Cisco backups over SNMP+TFTP work, on demand or triggered by
+the router's own config-change SNMP traps.
 
 ## Roadmap
 
@@ -12,7 +13,8 @@ becomes a commit in a plain Git repository, so the history works with any Git to
 2. **Cisco backups over SNMP+TFTP** (done): a built-in TFTP server, plus SNMP SETs on
    CISCO-CONFIG-COPY-MIB (or OLD-CISCO-SYS-MIB on old IOS) so each router uploads its
    running-config.
-3. **SNMP trap monitoring**: a `ciscoConfigManEvent` trap triggers an immediate backup.
+3. **SNMP trap monitoring** (done): `feroconf watch` backs up a router when it sends a
+   `ciscoConfigManEvent` trap.
 4. **Later**: SSH, NETCONF and gNMI collectors, syslog triggers, a native GUI (egui).
 
 ## Build
@@ -28,7 +30,8 @@ cargo build --release
 cp examples/feroconf.toml feroconf.toml   # then edit it
 feroconf check                            # validate the inventory
 
-feroconf backup                           # back up every device in the inventory
+feroconf watch                            # keep running: back up on config-change traps
+feroconf backup                           # back up every device in the inventory once
 feroconf backup core-rtr1                 # or only some
 feroconf import core-rtr1 core-rtr1.cfg   # store a config from a file instead
 feroconf log core-rtr1
@@ -102,10 +105,46 @@ snmp-server tftp-server-list 99
 `snmp-server tftp-server-list` limits which TFTP servers SNMP-started copies may use. A wrong v2c
 community usually shows up as "no SNMP response", because IOS silently drops such requests.
 
+## Watching for config changes (SNMP traps)
+
+`feroconf watch` keeps running. It backs up every device at start, then listens for SNMP traps
+(`watch.trap_listen`, UDP 162 by default) and backs up a router shortly after it reports a
+config change:
+
+- `ciscoConfigManEvent` (CISCO-CONFIG-MAN-MIB) with destination `running` or `startup`, or
+  `ccmCLIRunningConfigChanged`, schedules a backup `watch.debounce_secs` later (15 by default).
+  More traps in that time push it back, so one editing session becomes one backup.
+- A `ciscoConfigManEvent` whose destination is a network server (TFTP, FTP, RCP, SCP) only means
+  someone copied the config out. FeroConf's own backups cause exactly that trap, so it is logged
+  and ignored instead of starting a loop.
+- Other traps (linkDown, coldStart, ...) are logged.
+- Traps are matched to devices by their source address (or the v1 agent address). Traps from
+  unknown hosts, or with the wrong `watch.trap_community`, are ignored.
+- `watch.interval_mins` adds a full backup on a fixed interval, as a safety net for lost traps.
+
+SNMP v1 and v2c traps are supported; informs and SNMPv3 traps are not yet. On the router, next to
+the configuration above:
+
+```
+snmp-server enable traps config
+snmp-server host 192.0.2.10 version 2c <trap-community> config
+```
+
+To run it as a service, a systemd unit like this works:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/feroconf watch -i /etc/feroconf/feroconf.toml -s /var/lib/feroconf/store
+Environment=FEROCONF_RW_COMMUNITY=... FEROCONF_TRAP_COMMUNITY=...
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=on-failure
+```
+
 ### Trying it without a router
 
 `scripts/fake-cisco/run.sh` starts Net-SNMP's `snmpd` as a fake Cisco router on
-127.0.0.1:16161 and runs a full backup against it (needs `snmpd`, `snmpget` and `curl`; on
+127.0.0.1:16161 and runs backups against it, then `feroconf watch` with config-change traps
+sent by `snmptrap` (needs `snmpd`, `snmpget` and `curl`; on
 Debian/Ubuntu `apt install snmpd snmp curl`). CI runs it on every push.
 
 ### What counts as a change

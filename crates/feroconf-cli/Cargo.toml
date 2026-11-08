@@ -16,4 +16,4 @@ anyhow.workspace = true
 clap.workspace = true
 feroconf-core = { path = "../feroconf-core" }
 feroconf-collect = { path = "../feroconf-collect" }
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
